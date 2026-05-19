@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { FORMAS_INGRESO_POR_CUENTA } from "@/config/formasIngreso";
+import { FORMAS_EGRESO_POR_CUENTA } from "@/config/formasIngreso";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,8 @@ function parseAmount(raw: FormDataEntryValue | null): number {
 }
 
 function validarCuentaForma(cuenta: string, forma: string): string | null {
-  const config = FORMAS_INGRESO_POR_CUENTA.find((c) => c.cuenta === cuenta);
+  // Un pago a proveedor es un EGRESO → formas: TRANSFERENCIA / CREDITO / DEBITO / CHEQUE / EFECTIVO.
+  const config = FORMAS_EGRESO_POR_CUENTA.find((c) => c.cuenta === cuenta);
   if (!config) return `Cuenta inválida: ${cuenta}`;
   if (!(config.formas as readonly string[]).includes(forma)) {
     return `Forma "${forma}" no permitida para ${cuenta}. Válidas: ${config.formas.join(", ")}`;

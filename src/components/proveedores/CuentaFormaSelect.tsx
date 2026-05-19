@@ -1,12 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { FORMAS_INGRESO_POR_CUENTA } from "@/config/formasIngreso";
+import {
+  FORMAS_INGRESO_POR_CUENTA,
+  FORMAS_EGRESO_POR_CUENTA,
+} from "@/config/formasIngreso";
+
+interface Props {
+  defaultCuenta?: string;
+  /** "egreso" (default) cuando es un pago saliente, "ingreso" cuando entra plata. */
+  modo?: "egreso" | "ingreso";
+}
 
 /** Select sincronizado cuenta → forma. La forma cambia al cambiar la cuenta. */
-export default function CuentaFormaSelect({ defaultCuenta = "" }: { defaultCuenta?: string }) {
+export default function CuentaFormaSelect({ defaultCuenta = "", modo = "egreso" }: Props) {
   const [cuenta, setCuenta] = useState<string>(defaultCuenta);
-  const config = FORMAS_INGRESO_POR_CUENTA.find((c) => c.cuenta === cuenta);
+  const tabla = modo === "ingreso" ? FORMAS_INGRESO_POR_CUENTA : FORMAS_EGRESO_POR_CUENTA;
+  const config = tabla.find((c) => c.cuenta === cuenta);
   const formasDisponibles = config?.formas ?? [];
 
   return (
@@ -21,7 +31,7 @@ export default function CuentaFormaSelect({ defaultCuenta = "" }: { defaultCuent
           className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-brand-black"
         >
           <option value="" disabled>Elegir cuenta</option>
-          {FORMAS_INGRESO_POR_CUENTA.map((c) => (
+          {tabla.map((c) => (
             <option key={c.cuenta} value={c.cuenta}>{c.cuenta}</option>
           ))}
         </select>
