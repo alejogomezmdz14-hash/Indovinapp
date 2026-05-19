@@ -91,7 +91,8 @@ async function main() {
 
   const insert = wf.nodes.find((n) => n.name === "Insert movimientos Supabase");
   if (insert) {
-    insert.parameters.inputsToIgnore = "cuenta, _monto_positivo";
+    // Solo ignorar el helper interno; `cuenta` y `forma` SÍ deben guardarse en movimientos.
+    insert.parameters.inputsToIgnore = "_monto_positivo";
   }
 
   await api("PUT", `/workflows/${SF_GASTO_ID}`, {
