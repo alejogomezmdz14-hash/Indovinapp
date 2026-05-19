@@ -1,10 +1,15 @@
 import { google } from "googleapis";
+import type { sheets_v4 } from "googleapis";
+import { normalizarNombreCuenta, ordenarCuentasCanonico } from "@/config/cuentas";
 import type {
   Movimiento,
   Cuenta,
   Cheque,
   FacturaProveedor,
 } from "@/types";
+
+type MovimientoInput = Omit<Movimiento, "id" | "cuenta" | "fecha_carga"> &
+  Partial<Pick<Movimiento, "cuenta" | "fecha_carga">>;
 
 function getAuth() {
   return new google.auth.GoogleAuth({
@@ -26,6 +31,20 @@ function getSpreadsheetId(): string {
     throw new Error("GOOGLE_SHEET_ID no está configurado en las variables de entorno");
   }
   return id;
+}
+
+/** La hoja puede ser "Cuentas " (espacio final, legado) o "Cuentas" sin espacio. */
+function resolveCuentasSheetTitle(sheetList: sheets_v4.Schema$Sheet[] | undefined | null): string {
+  const titles = (sheetList ?? [])
+    .map((s) => s.properties?.title)
+    .filter((t): t is string => Boolean(t));
+  if (titles.includes("Cuentas ")) return "Cuentas ";
+  if (titles.includes("Cuentas")) return "Cuentas";
+  const fuzzy = titles.find((t) => t.trim() === "Cuentas");
+  if (fuzzy) return fuzzy;
+  throw new Error(
+    'En la planilla no hay ninguna pestaña llamada "Cuentas" o "Cuentas " (revisá el nombre exacto).',
+  );
 }
 
 function diffDays(target: Date): number {
@@ -56,6 +75,8 @@ export async function getMovimientos(): Promise<Movimiento[]> {
     return rows.map((row, i) => ({
       id: String(i + 1),
       fecha: row[0] ?? "",
+      fecha_carga: "",
+      cuenta: "",
       monto: Number(row[1]) || 0,
       proveedor: row[2] ?? "",
       categoria: row[3] ?? "",
@@ -71,7 +92,7 @@ export async function getMovimientos(): Promise<Movimiento[]> {
 }
 
 export async function appendMovimiento(
-  mov: Omit<Movimiento, "id">
+  mov: MovimientoInput
 ): Promise<void> {
   try {
     const sheets = getSheets();
@@ -103,19 +124,55 @@ export async function appendMovimiento(
 export async function getCuentas(): Promise<Cuenta[]> {
   try {
     const sheets = getSheets();
+    const spreadsheetId = getSpreadsheetId();
+    const meta = await sheets.spreadsheets.get({ spreadsheetId });
+    const cuentaTitle = resolveCuentasSheetTitle(meta.data.sheets);
+    const escaped = `'${cuentaTitle.replace(/'/g, "''")}'`;
     const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSpreadsheetId(),
-      range: "'Cuentas '!A2:B",
+      spreadsheetId,
+      range: `${escaped}!A2:B`,
     });
 
     const rows = res.data.values ?? [];
 
-    return rows.map((row) => ({
-      nombre: row[0] ?? "",
-      saldo: Number(row[1]) || 0,
-    }));
+    const cuentas = rows
+      .map((row) => ({
+        nombre: normalizarNombreCuenta(String(row[0] ?? "")),
+        saldo: Number(row[1]) || 0,
+      }))
+      .filter((c) => c.nombre.length > 0);
+    return ordenarCuentasCanonico(cuentas);
   } catch (error) {
     console.error("Error fetching cuentas:", error);
+    throw error;
+  }
+}
+
+export function fechaHoyArgentina(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+/** Fila en "proveedores" (A–E: referencia, proveedor, importe, vencimiento, foto_url). */
+export async function appendFacturaProveedorFila(
+  referencia: string,
+  proveedor: string,
+  monto: number,
+  fecha_vencimiento: string,
+  foto_url: string = ""
+): Promise<void> {
+  try {
+    const sheets = getSheets();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: getSpreadsheetId(),
+      range: "'proveedores'!A:E",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[referencia, proveedor, monto, fecha_vencimiento, foto_url]],
+      },
+    });
+  } catch (error) {
+    console.error("Error append factura proveedor:", error);
     throw error;
   }
 }
@@ -141,9 +198,12 @@ export async function getCheques(): Promise<Cheque[]> {
 
       return {
         id: String(i + 1),
+        referencia: row[0] ?? "",
         proveedor: row[1] ?? "",
         monto: Number(row[2]) || 0,
         fecha_vencimiento: fechaVencimiento,
+        fecha_carga: "",
+        foto_url: row[4] ?? "",
         estado,
       };
     });
@@ -158,7 +218,7 @@ export async function getFacturasProveedores(): Promise<FacturaProveedor[]> {
     const sheets = getSheets();
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: getSpreadsheetId(),
-      range: "'proveedores'!A2:D",
+      range: "'proveedores'!A2:E",
     });
 
     const rows = res.data.values ?? [];
@@ -174,9 +234,12 @@ export async function getFacturasProveedores(): Promise<FacturaProveedor[]> {
 
       return {
         id: String(i + 1),
+        referencia: row[0] ?? "",
         proveedor: row[1] ?? "",
         monto: Number(row[2]) || 0,
         fecha_vencimiento: fechaVencimiento,
+        fecha_carga: "",
+        foto_url: row[4] ?? "",
         estado,
       };
     });

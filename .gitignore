@@ -26,7 +26,11 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
+.env
 .env*.local
+
+# Cursor MCP secrets (if you switch mcp.json to use envFile with a local file)
+.cursor/n8n-mcp.env
 
 # vercel
 .vercel
@@ -34,3 +38,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel

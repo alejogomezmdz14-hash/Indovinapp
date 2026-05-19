@@ -1,16 +1,30 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
+
+/** Siempre leer Google Sheets en vivo (no cachear el HTML del dashboard entre deploys). */
+export const dynamic = "force-dynamic";
 import {
   getCuentas,
   getCheques,
   getFacturasProveedores,
   getMovimientos,
-} from "@/lib/googleSheets";
+  getPagosFacturas,
+  getPagosProveedores,
+} from "@/lib/data";
 import { formatCurrency, getCurrentMonthLabel } from "@/lib/format";
 import MetricCard from "@/components/dashboard/MetricCard";
 import CuentasList from "@/components/dashboard/CuentasList";
 import ChequesList from "@/components/dashboard/ChequesList";
 import ProveedoresTable from "@/components/dashboard/ProveedoresTable";
+import resumenes from "@/lib/resumenesFinancieros";
+
+const { buildResumenProveedores } = resumenes as {
+  buildResumenProveedores: (
+    facturas: Awaited<ReturnType<typeof getFacturasProveedores>>,
+    pagos: Awaited<ReturnType<typeof getPagosProveedores>>,
+    imputaciones: Awaited<ReturnType<typeof getPagosFacturas>>,
+  ) => Array<{ saldo_pendiente: number }>;
+};
 
 function calcularResultadoMes(movimientos: Awaited<ReturnType<typeof getMovimientos>>) {
   const now = new Date();
@@ -31,16 +45,19 @@ function calcularResultadoMes(movimientos: Awaited<ReturnType<typeof getMovimien
 }
 
 export default async function DashboardPage() {
-  const [cuentas, cheques, facturas, movimientos] = await Promise.all([
+  const [cuentas, cheques, facturas, movimientos, pagos, imputaciones] = await Promise.all([
     getCuentas(),
     getCheques(),
     getFacturasProveedores(),
     getMovimientos(),
+    getPagosProveedores(),
+    getPagosFacturas(),
   ]);
 
+  const proveedores = buildResumenProveedores(facturas, pagos, imputaciones);
   const totalDisponible = cuentas.reduce((sum, c) => sum + c.saldo, 0);
   const totalCheques = cheques.reduce((sum, c) => sum + c.monto, 0);
-  const deudaProveedores = facturas.reduce((sum, f) => sum + f.monto, 0);
+  const deudaProveedores = proveedores.reduce((sum, p) => sum + p.saldo_pendiente, 0);
   const resultadoMes = calcularResultadoMes(movimientos);
 
   return (

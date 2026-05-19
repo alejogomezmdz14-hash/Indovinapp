@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import AppChrome from "@/components/AppChrome";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -29,10 +29,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-[family-name:var(--font-geist-sans)] antialiased`}
       >
-        <Sidebar />
-        <main className="ml-[260px] min-h-screen bg-[#FFF8EE] p-8">
-          {children}
-        </main>
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );

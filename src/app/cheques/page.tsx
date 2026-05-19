@@ -1,6 +1,8 @@
-import { getCheques } from "@/lib/googleSheets";
+import { getCheques } from "@/lib/data";
 import { formatCurrency } from "@/lib/format";
 import StatusBadge from "@/components/dashboard/StatusBadge";
+
+export const dynamic = "force-dynamic";
 
 export default async function ChequesPage() {
   const cheques = await getCheques();
