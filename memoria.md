@@ -110,6 +110,24 @@ Orden y nombres exactos (aplican igual en tabla `cuentas` o equivalente en Supab
   - `npm run test:resumenes` OK.
   - `npm run build` OK.
 
+## Deploy 2026-05-19
+
+- Commit funcional pusheado a `main`: `73e23be feat: add supplier payment tracking`.
+- Supabase proyecto aplicado: `dtbmzlncbtxcxdujkrko`.
+- Vercel proyecto: `indovinapp` (`prj_rNE5citbizjvnFPyL5eJzqsZ8tDc`).
+- Deployment production READY:
+  - URL producción: `https://indovinapp.vercel.app`
+  - Deployment URL: `https://indovinapp-45mo0gqfj-alejogomezmdz14-hashs-projects.vercel.app`
+  - Deployment ID: `dpl_5PC57vVz7cF9GNCtcaiDU8N5YAXs`
+- Verificación post-deploy:
+  - `https://indovinapp.vercel.app/proveedores` respondió HTTP 200 y redirigió correctamente a login por auth.
+  - Logs runtime de producción filtrados por error/fatal en últimos 30 minutos: sin errores.
+- Quedaron sin commitear a propósito:
+  - `.cursor/`
+  - `n8n/`
+  - `scripts/_inspect-sheet.mjs`
+  Estos archivos no fueron necesarios para deployar la app y pueden contener configuración local o automatización sensible.
+
 ## Referencias rápidas en repo
 
 | Qué | Dónde |
