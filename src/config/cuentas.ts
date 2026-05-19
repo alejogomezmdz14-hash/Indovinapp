@@ -3,11 +3,10 @@
  * La pestaña puede llamarse "Cuentas " o "Cuentas" (ver `resolveCuentasSheetTitle`).
  */
 export const CUENTAS_ORDEN = [
-  "VALENCHO MERCADO PAGO 1",
-  "VALENCHO MERCADO PAGO 2",
-  "VALENCHO SANTANDER",
+  "SANTANDER VALENCHO",
+  "SANTANDER FRANCISCO",
+  "VALENCHO MERCADO PAGO",
   "FRANCISCO MERCADO PAGO",
-  "FRANCISCO SANTANDER",
   "EFECTIVO",
 ] as const;
 

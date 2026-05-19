@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { FORMAS_INGRESO_POR_CUENTA } from "@/config/formasIngreso";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,15 @@ function parseAmount(raw: FormDataEntryValue | null): number {
   if (typeof raw !== "string") return 0;
   const normalized = raw.replace(/\./g, "").replace(",", ".");
   return Number(normalized) || 0;
+}
+
+function validarCuentaForma(cuenta: string, forma: string): string | null {
+  const config = FORMAS_INGRESO_POR_CUENTA.find((c) => c.cuenta === cuenta);
+  if (!config) return `Cuenta inválida: ${cuenta}`;
+  if (!(config.formas as readonly string[]).includes(forma)) {
+    return `Forma "${forma}" no permitida para ${cuenta}. Válidas: ${config.formas.join(", ")}`;
+  }
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -24,6 +34,7 @@ export async function POST(req: NextRequest) {
   const fecha = String(form.get("fecha") ?? "").trim();
   const fechaCarga = String(form.get("fecha_carga") ?? "").trim();
   const cuenta = String(form.get("cuenta") ?? "").trim();
+  const forma = String(form.get("forma") ?? "").trim();
   const comentario = String(form.get("comentario") ?? "").trim();
 
   const imputaciones = Array.from(form.entries())
@@ -35,11 +46,16 @@ export async function POST(req: NextRequest) {
     .filter((i) => i.factura_id && i.monto_aplicado > 0);
 
   const monto = imputaciones.reduce((sum, i) => sum + i.monto_aplicado, 0);
-  if (!proveedor || !fecha || !cuenta || monto <= 0 || imputaciones.length === 0) {
+  if (!proveedor || !fecha || !cuenta || !forma || monto <= 0 || imputaciones.length === 0) {
     return NextResponse.json(
-      { error: "Faltan datos para registrar el pago." },
+      { error: "Faltan datos para registrar el pago (incluyendo forma de pago)." },
       { status: 400 },
     );
+  }
+
+  const errorCombinacion = validarCuentaForma(cuenta, forma);
+  if (errorCombinacion) {
+    return NextResponse.json({ error: errorCombinacion }, { status: 400 });
   }
 
   const { data: pago, error: pagoError } = await supabase
@@ -49,6 +65,7 @@ export async function POST(req: NextRequest) {
       fecha,
       fecha_carga: fechaCarga || undefined,
       cuenta,
+      forma,
       monto,
       comentario,
       origen: "app",

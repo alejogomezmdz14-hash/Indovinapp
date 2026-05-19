@@ -24,7 +24,28 @@ function estadoDesdeFacturas(facturas, today) {
   return "al_dia";
 }
 
-function buildResumenProveedores(facturas, pagos = [], imputaciones = [], today = new Date()) {
+function proveedorKey(proveedor) {
+  return String(proveedor ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function proveedorCanonico(proveedor, canonicosPorKey) {
+  const normalized = proveedorKey(proveedor);
+  return canonicosPorKey.get(normalized) ?? String(proveedor ?? "").trim();
+}
+
+function buildResumenProveedores(
+  facturas,
+  pagos = [],
+  imputaciones = [],
+  today = new Date(),
+  proveedoresCanonicos = [],
+) {
+  const canonicosPorKey = new Map(
+    proveedoresCanonicos.map((proveedor) => [proveedorKey(proveedor), proveedor]),
+  );
   const aplicadoPorFactura = new Map();
   for (const imp of imputaciones) {
     const facturaId = String(imp.factura_id ?? "");
@@ -36,7 +57,7 @@ function buildResumenProveedores(facturas, pagos = [], imputaciones = [], today 
 
   const pagosPorProveedor = new Map();
   for (const pago of pagos) {
-    const proveedor = String(pago.proveedor ?? "");
+    const proveedor = proveedorCanonico(pago.proveedor, canonicosPorKey);
     pagosPorProveedor.set(
       proveedor,
       (pagosPorProveedor.get(proveedor) ?? 0) + Number(pago.monto || 0),
@@ -44,8 +65,11 @@ function buildResumenProveedores(facturas, pagos = [], imputaciones = [], today 
   }
 
   const grouped = new Map();
+  for (const proveedor of proveedoresCanonicos) {
+    grouped.set(proveedor, []);
+  }
   for (const factura of facturas) {
-    const proveedor = String(factura.proveedor ?? "");
+    const proveedor = proveedorCanonico(factura.proveedor, canonicosPorKey);
     const monto = Number(factura.monto || 0);
     const montoPagado = Math.min(monto, aplicadoPorFactura.get(String(factura.id)) ?? 0);
     const facturaConSaldo = {
@@ -77,7 +101,15 @@ function buildResumenProveedores(facturas, pagos = [], imputaciones = [], today 
         }),
       };
     })
-    .sort((a, b) => b.saldo_pendiente - a.saldo_pendiente);
+    .sort((a, b) => {
+      const aIndex = proveedoresCanonicos.findIndex((p) => proveedorKey(p) === proveedorKey(a.proveedor));
+      const bIndex = proveedoresCanonicos.findIndex((p) => proveedorKey(p) === proveedorKey(b.proveedor));
+      if (aIndex !== -1 || bIndex !== -1) {
+        return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) -
+          (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
+      }
+      return b.saldo_pendiente - a.saldo_pendiente;
+    });
 }
 
 function buildResumenIngresos(movimientos, desgloses = []) {

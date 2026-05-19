@@ -60,6 +60,35 @@ test("buildResumenProveedores calcula pagos parciales y estado por proveedor", (
   );
 });
 
+test("buildResumenProveedores incluye proveedores canónicos sin facturas y respeta el orden", () => {
+  const proveedoresCanonicos = ["CARNES ANDIAS", "PROVEEDOR CERDO", "LG OESTE CONGELADOS"];
+  const facturas = [
+    {
+      id: "f1",
+      proveedor: "carnes andias",
+      monto: 12000,
+      fecha_vencimiento: "20/02/2026",
+      fecha_carga: "19/01/2026",
+    },
+  ];
+
+  const resumen = buildResumenProveedores(
+    facturas,
+    [],
+    [],
+    new Date(2026, 0, 15),
+    proveedoresCanonicos,
+  );
+
+  assert.deepEqual(
+    resumen.map((p) => p.proveedor),
+    proveedoresCanonicos,
+  );
+  assert.equal(resumen[0].saldo_pendiente, 12000);
+  assert.equal(resumen[1].saldo_pendiente, 0);
+  assert.equal(resumen[1].facturas.length, 0);
+});
+
 test("buildResumenIngresos agrupa por fecha y cuenta con desglose por forma", () => {
   const movimientos = [
     {

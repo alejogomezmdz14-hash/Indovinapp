@@ -98,13 +98,20 @@ export async function getMovimientos(): Promise<Movimiento[]> {
 
 export async function getCheques(): Promise<Cheque[]> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("cheques")
-    .select("id, proveedor, monto, fecha_vencimiento");
+  const selectWithFoto = "id, referencia, proveedor, monto, fecha_vencimiento, foto_url";
+  const selectLegacy = "id, referencia, proveedor, monto, fecha_vencimiento";
+  const result = await supabase.from("cheques").select(selectWithFoto);
+  let data: Array<Record<string, unknown>> | null = result.data;
+  let error = result.error;
+  if (error && isMissingSchemaError(error)) {
+    const fallback = await supabase.from("cheques").select(selectLegacy);
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) throw new Error(`Supabase cheques: ${error.message}`);
 
   return (data ?? []).map((r) => {
-    const fechaVencimiento = r.fecha_vencimiento ?? "";
+    const fechaVencimiento = String(r.fecha_vencimiento ?? "");
     const dias = diffDays(parseDate(fechaVencimiento));
     let estado: Cheque["estado"];
     if (dias < 5) estado = "urgente";
@@ -112,9 +119,11 @@ export async function getCheques(): Promise<Cheque[]> {
     else estado = "tiempo";
     return {
       id: String(r.id),
-      proveedor: r.proveedor ?? "",
+      referencia: String(r.referencia ?? ""),
+      proveedor: String(r.proveedor ?? ""),
       monto: Number(r.monto) || 0,
       fecha_vencimiento: fechaVencimiento,
+      foto_url: String(r.foto_url ?? ""),
       estado,
     };
   });
@@ -159,21 +168,35 @@ export async function getFacturasProveedores(): Promise<FacturaProveedor[]> {
 
 export async function getPagosProveedores(): Promise<PagoProveedor[]> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  const selectWithForma =
+    "id, fecha, fecha_carga, proveedor, cuenta, forma, monto, comentario";
+  const selectLegacy = "id, fecha, fecha_carga, proveedor, cuenta, monto, comentario";
+  const result = await supabase
     .from("pagos_proveedor")
-    .select("id, fecha, fecha_carga, proveedor, cuenta, monto, comentario")
+    .select(selectWithForma)
     .order("created_at", { ascending: false });
+  let data: Array<Record<string, unknown>> | null = result.data;
+  let error = result.error;
+  if (error && isMissingSchemaError(error)) {
+    const fallback = await supabase
+      .from("pagos_proveedor")
+      .select(selectLegacy)
+      .order("created_at", { ascending: false });
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error && isMissingSchemaError(error)) return [];
   if (error) throw new Error(`Supabase pagos_proveedor: ${error.message}`);
 
   return (data ?? []).map((r) => ({
     id: String(r.id),
-    fecha: r.fecha ?? "",
-    fecha_carga: r.fecha_carga ?? "",
-    proveedor: r.proveedor ?? "",
-    cuenta: r.cuenta ?? "",
+    fecha: String(r.fecha ?? ""),
+    fecha_carga: String(r.fecha_carga ?? ""),
+    proveedor: String(r.proveedor ?? ""),
+    cuenta: String(r.cuenta ?? ""),
+    forma: String(r.forma ?? ""),
     monto: Number(r.monto) || 0,
-    comentario: r.comentario ?? "",
+    comentario: String(r.comentario ?? ""),
   }));
 }
 

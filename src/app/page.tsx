@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 
-/** Siempre leer Google Sheets en vivo (no cachear el HTML del dashboard entre deploys). */
+/** Lee Supabase en cada request — sin cache entre deploys. */
 export const dynamic = "force-dynamic";
 import {
   getCuentas,
@@ -16,6 +16,8 @@ import MetricCard from "@/components/dashboard/MetricCard";
 import CuentasList from "@/components/dashboard/CuentasList";
 import ChequesList from "@/components/dashboard/ChequesList";
 import ProveedoresTable from "@/components/dashboard/ProveedoresTable";
+import { PROVEEDORES_ORDEN } from "@/config/proveedores";
+import type { ResumenProveedor } from "@/types";
 import resumenes from "@/lib/resumenesFinancieros";
 
 const { buildResumenProveedores } = resumenes as {
@@ -23,7 +25,9 @@ const { buildResumenProveedores } = resumenes as {
     facturas: Awaited<ReturnType<typeof getFacturasProveedores>>,
     pagos: Awaited<ReturnType<typeof getPagosProveedores>>,
     imputaciones: Awaited<ReturnType<typeof getPagosFacturas>>,
-  ) => Array<{ saldo_pendiente: number }>;
+    today?: Date,
+    proveedoresCanonicos?: readonly string[],
+  ) => ResumenProveedor[];
 };
 
 function calcularResultadoMes(movimientos: Awaited<ReturnType<typeof getMovimientos>>) {
@@ -54,7 +58,13 @@ export default async function DashboardPage() {
     getPagosFacturas(),
   ]);
 
-  const proveedores = buildResumenProveedores(facturas, pagos, imputaciones);
+  const proveedores = buildResumenProveedores(
+    facturas,
+    pagos,
+    imputaciones,
+    new Date(),
+    PROVEEDORES_ORDEN,
+  );
   const totalDisponible = cuentas.reduce((sum, c) => sum + c.saldo, 0);
   const totalCheques = cheques.reduce((sum, c) => sum + c.monto, 0);
   const deudaProveedores = proveedores.reduce((sum, p) => sum + p.saldo_pendiente, 0);
@@ -116,7 +126,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* PROVEEDORES TABLE */}
-      <ProveedoresTable facturas={facturas} />
+      <ProveedoresTable proveedores={proveedores} />
     </div>
   );
 }

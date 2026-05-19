@@ -29,8 +29,19 @@ yarn-error.log*
 .env
 .env*.local
 
-# Cursor MCP secrets (if you switch mcp.json to use envFile with a local file)
-.cursor/n8n-mcp.env
+# Cursor IDE state (config local — no commitear)
+.cursor/
+
+# Notas privadas de trabajo
+memoria.md
+claude.md
+
+# Scripts diagnósticos locales (prefijo _) — pueden tocar credenciales sensibles
+scripts/_*.mjs
+n8n/_*.json
+n8n/_*.mjs
+n8n/_*.txt
+n8n/._*
 
 # vercel
 .vercel

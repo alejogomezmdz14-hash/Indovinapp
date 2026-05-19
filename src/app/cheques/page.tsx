@@ -55,6 +55,7 @@ export default async function ChequesPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-brand-cream">
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Referencia</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Proveedor</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Monto</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Vencimiento</th>
@@ -69,6 +70,7 @@ export default async function ChequesPage() {
                     i !== cheques.length - 1 ? "border-b border-gray-50" : ""
                   }`}
                 >
+                  <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{c.referencia || "-"}</td>
                   <td className="px-5 py-3.5 font-semibold text-brand-black">{c.proveedor}</td>
                   <td className="px-5 py-3.5 text-right font-bold text-brand-black">{formatCurrency(c.monto)}</td>
                   <td className="px-5 py-3.5 text-gray-500">{c.fecha_vencimiento}</td>
@@ -77,7 +79,7 @@ export default async function ChequesPage() {
               ))}
               {cheques.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-12 text-center text-gray-400">
+                  <td colSpan={5} className="px-5 py-12 text-center text-gray-400">
                     No hay cheques registrados
                   </td>
                 </tr>

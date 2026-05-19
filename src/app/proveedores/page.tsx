@@ -7,7 +7,8 @@ import {
 import { formatCurrency } from "@/lib/format";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import FacturaFotoUploader from "@/components/proveedores/FacturaFotoUploader";
-import { CUENTAS_ORDEN } from "@/config/cuentas";
+import CuentaFormaSelect from "@/components/proveedores/CuentaFormaSelect";
+import { PROVEEDORES_ORDEN } from "@/config/proveedores";
 import type { ResumenProveedor } from "@/types";
 import resumenes from "@/lib/resumenesFinancieros";
 
@@ -18,6 +19,8 @@ const { buildResumenProveedores } = resumenes as {
     facturas: Awaited<ReturnType<typeof getFacturasProveedores>>,
     pagos: Awaited<ReturnType<typeof getPagosProveedores>>,
     imputaciones: Awaited<ReturnType<typeof getPagosFacturas>>,
+    today?: Date,
+    proveedoresCanonicos?: readonly string[],
   ) => ResumenProveedor[];
 };
 
@@ -27,7 +30,13 @@ export default async function ProveedoresPage() {
     getPagosProveedores(),
     getPagosFacturas(),
   ]);
-  const proveedores = buildResumenProveedores(facturas, pagos, imputaciones);
+  const proveedores = buildResumenProveedores(
+    facturas,
+    pagos,
+    imputaciones,
+    new Date(),
+    PROVEEDORES_ORDEN,
+  );
 
   const vencidas = proveedores.filter((p) => p.estado === "vencida");
   const porVencer = proveedores.filter((p) => p.estado === "por_vencer");
@@ -35,6 +44,29 @@ export default async function ProveedoresPage() {
   const totalDeuda = proveedores.reduce((sum, p) => sum + p.saldo_pendiente, 0);
   const hoy = fechaHoyArgentina();
   const hoyIso = new Date().toISOString().slice(0, 10);
+
+  // Desglose de pagos por (cuenta, forma) — del mes en curso.
+  const ahora = new Date();
+  const mesActual = ahora.getMonth();
+  const anioActual = ahora.getFullYear();
+  const pagosDelMes = pagos.filter((p) => {
+    if (!p.fecha) return false;
+    const parts = p.fecha.includes("/") ? p.fecha.split("/") : null;
+    const d = parts
+      ? new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]))
+      : new Date(p.fecha);
+    return d.getMonth() === mesActual && d.getFullYear() === anioActual;
+  });
+  const desglosePagos = new Map<string, { cuenta: string; forma: string; total: number; count: number }>();
+  for (const p of pagosDelMes) {
+    const key = `${p.cuenta}__${p.forma || "(sin forma)"}`;
+    const prev = desglosePagos.get(key) ?? { cuenta: p.cuenta, forma: p.forma || "(sin forma)", total: 0, count: 0 };
+    prev.total += p.monto;
+    prev.count += 1;
+    desglosePagos.set(key, prev);
+  }
+  const desglosePagosList = Array.from(desglosePagos.values()).sort((a, b) => b.total - a.total);
+  const totalPagadoMes = desglosePagosList.reduce((sum, d) => sum + d.total, 0);
 
   return (
     <div className="space-y-8">
@@ -48,6 +80,41 @@ export default async function ProveedoresPage() {
       </div>
 
       <FacturaFotoUploader />
+
+      <div className="rounded-2xl bg-white p-6 shadow-card">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-brand-black">Pagos por medio - mes actual</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {pagosDelMes.length} pago{pagosDelMes.length !== 1 ? "s" : ""} registrado{pagosDelMes.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <span className="text-sm font-bold text-emerald-700">
+            Total: {formatCurrency(totalPagadoMes)}
+          </span>
+        </div>
+        {desglosePagosList.length > 0 ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {desglosePagosList.map((d) => (
+              <div
+                key={`${d.cuenta}-${d.forma}`}
+                className="flex items-center justify-between rounded-xl border border-brand-cream-dark bg-brand-cream/40 px-4 py-3"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-brand-black">{d.cuenta}</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">{d.forma}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-brand-black">{formatCurrency(d.total)}</p>
+                  <p className="text-[11px] text-gray-400">{d.count} pago{d.count !== 1 ? "s" : ""}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-gray-400">Aún no hay pagos registrados este mes.</p>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         <div className="relative overflow-hidden rounded-2xl bg-white p-5 shadow-card">
@@ -149,7 +216,7 @@ export default async function ProveedoresPage() {
               >
                 <input type="hidden" name="proveedor" value={proveedor.proveedor} />
                 <h4 className="font-semibold text-brand-black">Registrar pago e imputarlo</h4>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Fecha pago
                     <input
@@ -167,19 +234,7 @@ export default async function ProveedoresPage() {
                       className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-brand-black"
                     />
                   </label>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Cuenta
-                    <select
-                      name="cuenta"
-                      defaultValue=""
-                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-brand-black"
-                    >
-                      <option value="" disabled>Elegir cuenta</option>
-                      {CUENTAS_ORDEN.map((cuenta) => (
-                        <option key={cuenta} value={cuenta}>{cuenta}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <CuentaFormaSelect />
                   <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Comentario
                     <input

@@ -19,9 +19,11 @@ export interface Cuenta {
 
 export interface Cheque {
   id: string;
+  referencia: string;
   proveedor: string;
   monto: number;
   fecha_vencimiento: string;
+  foto_url?: string;
   estado: "urgente" | "esta_semana" | "tiempo";
 }
 
@@ -44,6 +46,7 @@ export interface PagoProveedor {
   fecha_carga: string;
   proveedor: string;
   cuenta: string;
+  forma: string;
   monto: number;
   comentario: string;
 }

@@ -202,7 +202,6 @@ export async function getCheques(): Promise<Cheque[]> {
         proveedor: row[1] ?? "",
         monto: Number(row[2]) || 0,
         fecha_vencimiento: fechaVencimiento,
-        fecha_carga: "",
         foto_url: row[4] ?? "",
         estado,
       };

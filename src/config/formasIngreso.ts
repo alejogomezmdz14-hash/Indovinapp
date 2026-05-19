@@ -1,11 +1,11 @@
 export const FORMAS_INGRESO_POR_CUENTA = [
   {
-    cuenta: "VALENCHO SANTANDER",
+    cuenta: "SANTANDER VALENCHO",
     label: "Santander Valencho",
     formas: ["QR", "CREDITO", "DEBITO"],
   },
   {
-    cuenta: "FRANCISCO SANTANDER",
+    cuenta: "SANTANDER FRANCISCO",
     label: "Santander Francisco",
     formas: ["QR", "CREDITO", "DEBITO"],
   },
