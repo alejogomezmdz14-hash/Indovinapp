@@ -3,6 +3,7 @@ export interface Movimiento {
   fecha: string;
   fecha_carga: string;
   cuenta: string;
+  forma: string;
   monto: number;
   proveedor: string;
   categoria: string;

@@ -77,6 +77,7 @@ export async function getMovimientos(): Promise<Movimiento[]> {
       fecha: row[0] ?? "",
       fecha_carga: "",
       cuenta: "",
+      forma: "",
       monto: Number(row[1]) || 0,
       proveedor: row[2] ?? "",
       categoria: row[3] ?? "",

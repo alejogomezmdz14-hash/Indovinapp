@@ -1,23 +1,106 @@
 import { getIngresosDesglose, getMovimientos } from "@/lib/data";
 import { formatCurrency } from "@/lib/format";
-import type { ResumenIngreso } from "@/types";
-import resumenes from "@/lib/resumenesFinancieros";
+import type { IngresoDesglose, Movimiento } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-const { buildResumenIngresos } = resumenes as {
-  buildResumenIngresos: (
-    movimientos: Awaited<ReturnType<typeof getMovimientos>>,
-    desgloses: Awaited<ReturnType<typeof getIngresosDesglose>>,
-  ) => ResumenIngreso[];
+type FilaLibroDiario = {
+  id: string;
+  fecha: string;
+  categoria: string;
+  detalle: string;
+  ingreso: number; // 0 si es egreso
+  egreso: number;  // 0 si es ingreso
+  medioIngreso: string;
+  medioEgreso: string;
 };
+
+function parseDateKey(raw: string): string {
+  if (!raw) return "";
+  if (raw.includes("/")) {
+    const [d, m, y] = raw.split("/");
+    return `${y || "?"}-${(m || "?").padStart(2, "0")}-${(d || "?").padStart(2, "0")}`;
+  }
+  return raw;
+}
+
+/**
+ * Convierte los movimientos de Supabase a las 7 columnas con valores +
+ * 2 columnas de totales del día (ingresos / egresos).
+ * El layout coincide exactamente con la pestaña "Libro diario" del Sheet.
+ */
+function armarFilas(
+  movimientos: Movimiento[],
+  desgloses: IngresoDesglose[],
+): FilaLibroDiario[] {
+  const desglosePorMov = new Map<string, IngresoDesglose[]>();
+  for (const d of desgloses) {
+    const key = String(d.movimiento_id ?? "");
+    if (!desglosePorMov.has(key)) desglosePorMov.set(key, []);
+    desglosePorMov.get(key)!.push(d);
+  }
+
+  return movimientos.map((m) => {
+    const esIngreso = m.monto >= 0;
+    const desg = desglosePorMov.get(m.id) ?? [];
+    const formaIngreso = esIngreso
+      ? (desg[0]?.forma ?? m.forma ?? "")
+      : "";
+    const formaEgreso = !esIngreso
+      ? (m.forma ?? "")
+      : "";
+    const detalle = m.proveedor
+      ? (m.comentario ? `${m.proveedor} - ${m.comentario}` : m.proveedor)
+      : m.comentario;
+
+    return {
+      id: m.id,
+      fecha: m.fecha,
+      categoria: m.categoria || (esIngreso ? "Ingreso" : "Gasto"),
+      detalle,
+      ingreso: esIngreso ? m.monto : 0,
+      egreso: esIngreso ? 0 : Math.abs(m.monto),
+      medioIngreso: formaIngreso,
+      medioEgreso: formaEgreso,
+    };
+  });
+}
+
+function totalesPorDia(filas: FilaLibroDiario[]) {
+  const totales = new Map<string, { totalIngreso: number; totalEgreso: number }>();
+  for (const f of filas) {
+    const key = parseDateKey(f.fecha);
+    const prev = totales.get(key) ?? { totalIngreso: 0, totalEgreso: 0 };
+    prev.totalIngreso += f.ingreso;
+    prev.totalEgreso += f.egreso;
+    totales.set(key, prev);
+  }
+  return totales;
+}
 
 export default async function LibroDiarioPage() {
   const [movimientos, desgloses] = await Promise.all([
     getMovimientos(),
     getIngresosDesglose(),
   ]);
-  const resumenIngresos = buildResumenIngresos(movimientos, desgloses);
+
+  const filas = armarFilas(movimientos, desgloses);
+  // Orden cronológico ascendente (igual que el Sheet): primero la fecha más vieja arriba.
+  filas.sort((a, b) => {
+    const ka = parseDateKey(a.fecha);
+    const kb = parseDateKey(b.fecha);
+    return ka.localeCompare(kb);
+  });
+
+  const totales = totalesPorDia(filas);
+  // Marcamos la última fila de cada día para mostrar el total ahí.
+  const ultimaPorDia = new Map<string, string>();
+  for (const f of filas) {
+    ultimaPorDia.set(parseDateKey(f.fecha), f.id);
+  }
+
+  const totalIngresosGlobal = filas.reduce((s, f) => s + f.ingreso, 0);
+  const totalEgresosGlobal = filas.reduce((s, f) => s + f.egreso, 0);
 
   return (
     <div className="space-y-8">
@@ -26,121 +109,82 @@ export default async function LibroDiarioPage() {
           Libro diario
         </h1>
         <p className="mt-1 text-sm font-medium text-gray-400">
-          Todos los movimientos registrados
+          Espejo de la pestaña “Libro diario” del Sheet
         </p>
       </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-card">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 className="font-bold text-brand-black">Ingresos por cuenta</h3>
-            <p className="text-sm text-gray-400">
-              Resumen desplegable con QR, crédito, débito, alias y efectivo.
-            </p>
-          </div>
-          <span className="text-sm font-bold text-emerald-700">
-            {formatCurrency(resumenIngresos.reduce((sum, i) => sum + i.monto_total, 0))}
-          </span>
+      {/* Métricas globales */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl bg-white p-5 shadow-card">
+          <p className="text-sm font-medium text-gray-500">Total ingresos</p>
+          <p className="mt-1 text-2xl font-bold text-emerald-700">
+            {formatCurrency(totalIngresosGlobal)}
+          </p>
         </div>
-
-        <div className="mt-5 space-y-3">
-          {resumenIngresos.map((ingreso) => (
-            <details
-              key={`${ingreso.fecha}-${ingreso.fecha_carga}-${ingreso.cuenta}`}
-              className="group rounded-xl border border-brand-cream-dark bg-brand-cream/40 p-4"
-            >
-              <summary className="flex cursor-pointer list-none flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold text-brand-black">{ingreso.cuenta}</p>
-                  <p className="text-xs text-gray-500">
-                    Fecha: {ingreso.fecha || "-"} - Carga: {ingreso.fecha_carga || "-"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-emerald-700">
-                    {formatCurrency(ingreso.monto_total)}
-                  </span>
-                  <span className="text-xs font-semibold text-gray-400 group-open:hidden">
-                    Ver desglose
-                  </span>
-                  <span className="hidden text-xs font-semibold text-gray-400 group-open:inline">
-                    Ocultar
-                  </span>
-                </div>
-              </summary>
-
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                {ingreso.desglose.length > 0 ? (
-                  ingreso.desglose.map((item) => (
-                    <div key={item.forma} className="rounded-lg bg-white px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                        {item.forma}
-                      </p>
-                      <p className="font-bold text-brand-black">{formatCurrency(item.monto)}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-400">
-                    Sin desglose cargado todavía para estos ingresos.
-                  </p>
-                )}
-              </div>
-            </details>
-          ))}
-          {resumenIngresos.length === 0 && (
-            <p className="py-6 text-center text-sm text-gray-400">
-              No hay ingresos registrados para resumir.
-            </p>
-          )}
+        <div className="rounded-2xl bg-white p-5 shadow-card">
+          <p className="text-sm font-medium text-gray-500">Total egresos</p>
+          <p className="mt-1 text-2xl font-bold text-brand-wine">
+            {formatCurrency(totalEgresosGlobal)}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-white p-5 shadow-card">
+          <p className="text-sm font-medium text-gray-500">Resultado</p>
+          <p className={`mt-1 text-2xl font-bold ${totalIngresosGlobal - totalEgresosGlobal >= 0 ? "text-emerald-700" : "text-brand-wine"}`}>
+            {formatCurrency(totalIngresosGlobal - totalEgresosGlobal)}
+          </p>
         </div>
       </div>
 
+      {/* Tabla idéntica al Sheet — 9 columnas */}
       <div className="rounded-2xl bg-white shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="bg-brand-cream border-b border-brand-cream-dark">
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Fecha</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Carga</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Cuenta</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Monto</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Proveedor</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Categoría</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Comentario</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Comprobante</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">N° Comp.</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Vencimiento</th>
+              <tr className="bg-brand-cream border-b border-brand-cream-dark text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3">categoria</th>
+                <th className="px-4 py-3">Detalle de los movimientos</th>
+                <th className="px-4 py-3 text-right">ingresos</th>
+                <th className="px-4 py-3 text-right">egresos</th>
+                <th className="px-4 py-3">medio de ingreso</th>
+                <th className="px-4 py-3">medio de egreso</th>
+                <th className="px-4 py-3 text-right">total del dia ingreso</th>
+                <th className="px-4 py-3 text-right">total del dia egresos</th>
               </tr>
             </thead>
             <tbody>
-              {movimientos.map((mov, i) => (
-                <tr
-                  key={mov.id}
-                  className={`transition-colors hover:bg-brand-cream ${
-                    i !== movimientos.length - 1 ? "border-b border-gray-50" : ""
-                  }`}
-                >
-                  <td className="px-5 py-3.5 font-medium text-brand-black whitespace-nowrap">{mov.fecha}</td>
-                  <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{mov.fecha_carga || "-"}</td>
-                  <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{mov.cuenta || "-"}</td>
-                  <td className={`px-5 py-3.5 text-right font-bold whitespace-nowrap ${mov.monto >= 0 ? "text-emerald-600" : "text-brand-wine"}`}>
-                    {formatCurrency(mov.monto)}
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-700">{mov.proveedor}</td>
-                  <td className="px-5 py-3.5">
-                    <span className="inline-flex rounded-lg bg-brand-cream-dark px-2.5 py-1 text-xs font-medium text-brand-black">
-                      {mov.categoria}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-500 max-w-[200px] truncate">{mov.comentario}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{mov.tipo_comprobante}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{mov.numero_comprobante}</td>
-                  <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{mov.fecha_vencimiento}</td>
-                </tr>
-              ))}
-              {movimientos.length === 0 && (
+              {filas.map((f, i) => {
+                const dateKey = parseDateKey(f.fecha);
+                const esUltimaDelDia = ultimaPorDia.get(dateKey) === f.id;
+                const tot = totales.get(dateKey);
+                return (
+                  <tr
+                    key={f.id}
+                    className={`transition-colors hover:bg-brand-cream ${i !== filas.length - 1 ? "border-b border-gray-50" : ""}`}
+                  >
+                    <td className="px-4 py-3 font-medium text-brand-black whitespace-nowrap">{f.fecha}</td>
+                    <td className="px-4 py-3 text-gray-600">{f.categoria}</td>
+                    <td className="px-4 py-3 text-gray-700 max-w-[280px] truncate" title={f.detalle}>{f.detalle}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-emerald-700 whitespace-nowrap">
+                      {f.ingreso > 0 ? formatCurrency(f.ingreso) : ""}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-brand-wine whitespace-nowrap">
+                      {f.egreso > 0 ? formatCurrency(f.egreso) : ""}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{f.medioIngreso || ""}</td>
+                    <td className="px-4 py-3 text-gray-600">{f.medioEgreso || ""}</td>
+                    <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">
+                      {esUltimaDelDia && tot && tot.totalIngreso > 0 ? formatCurrency(tot.totalIngreso) : ""}
+                    </td>
+                    <td className="px-4 py-3 text-right text-brand-wine whitespace-nowrap">
+                      {esUltimaDelDia && tot && tot.totalEgreso > 0 ? formatCurrency(tot.totalEgreso) : ""}
+                    </td>
+                  </tr>
+                );
+              })}
+              {filas.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-5 py-12 text-center text-gray-400">
+                  <td colSpan={9} className="px-5 py-12 text-center text-gray-400">
                     No hay movimientos registrados
                   </td>
                 </tr>

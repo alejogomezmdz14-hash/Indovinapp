@@ -61,23 +61,38 @@ export async function getCuentas(): Promise<Cuenta[]> {
 
 export async function getMovimientos(): Promise<Movimiento[]> {
   const supabase = createSupabaseServerClient();
-  const selectWithNewFields =
+  const selectConForma =
+    "id, fecha, monto, proveedor, categoria, comentario, tipo_comprobante, numero_comprobante, fecha_vencimiento, cuenta, forma, fecha_carga";
+  const selectSinForma =
     "id, fecha, monto, proveedor, categoria, comentario, tipo_comprobante, numero_comprobante, fecha_vencimiento, cuenta, fecha_carga";
   const selectLegacy =
     "id, fecha, monto, proveedor, categoria, comentario, tipo_comprobante, numero_comprobante, fecha_vencimiento";
-  const result = await supabase
+
+  // Intento 1: con forma (migration 009 aplicada).
+  let raw = await supabase
     .from("movimientos")
-    .select(selectWithNewFields)
+    .select(selectConForma)
     .order("created_at", { ascending: false });
-  let data: Array<Record<string, unknown>> | null = result.data;
-  let error = result.error;
+  let data: Array<Record<string, unknown>> | null = raw.data as unknown as Array<Record<string, unknown>> | null;
+  let error = raw.error;
+
+  // Intento 2: sin forma pero con cuenta/fecha_carga (migration 005 aplicada).
   if (error && isMissingSchemaError(error)) {
-    const fallback = await supabase
+    const r2 = await supabase
+      .from("movimientos")
+      .select(selectSinForma)
+      .order("created_at", { ascending: false });
+    data = r2.data as unknown as Array<Record<string, unknown>> | null;
+    error = r2.error;
+  }
+  // Intento 3: schema legacy.
+  if (error && isMissingSchemaError(error)) {
+    const r3 = await supabase
       .from("movimientos")
       .select(selectLegacy)
       .order("created_at", { ascending: false });
-    data = fallback.data;
-    error = fallback.error;
+    data = r3.data as unknown as Array<Record<string, unknown>> | null;
+    error = r3.error;
   }
   if (error) throw new Error(`Supabase movimientos: ${error.message}`);
 
@@ -86,6 +101,7 @@ export async function getMovimientos(): Promise<Movimiento[]> {
     fecha: String(r.fecha ?? ""),
     fecha_carga: String(r.fecha_carga ?? ""),
     cuenta: String(r.cuenta ?? ""),
+    forma: String(r.forma ?? ""),
     monto: Number(r.monto) || 0,
     proveedor: String(r.proveedor ?? ""),
     categoria: String(r.categoria ?? ""),

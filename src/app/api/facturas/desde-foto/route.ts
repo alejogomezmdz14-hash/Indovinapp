@@ -157,6 +157,7 @@ export async function POST(req: NextRequest) {
       tipo_comprobante: "Factura",
       numero_comprobante: data.numero_factura || referencia,
       fecha_vencimiento: fechaVencimiento,
+      forma: "",
     });
 
     revalidatePath("/proveedores");
