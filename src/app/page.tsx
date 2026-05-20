@@ -27,6 +27,7 @@ const { buildResumenProveedores } = resumenes as {
     imputaciones: Awaited<ReturnType<typeof getPagosFacturas>>,
     today?: Date,
     proveedoresCanonicos?: readonly string[],
+    movimientos?: Awaited<ReturnType<typeof getMovimientos>>,
   ) => ResumenProveedor[];
 };
 
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
     imputaciones,
     new Date(),
     PROVEEDORES_ORDEN,
+    movimientos,
   );
   const totalDisponible = cuentas.reduce((sum, c) => sum + c.saldo, 0);
   const totalCheques = cheques.reduce((sum, c) => sum + c.monto, 0);

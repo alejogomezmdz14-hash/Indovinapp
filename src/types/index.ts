@@ -71,6 +71,8 @@ export interface ResumenProveedor {
   total_facturado: number;
   total_pagado: number;
   pagos_registrados: number;
+  gastos_directos: number;
+  total_movido: number;
   saldo_pendiente: number;
   estado: FacturaProveedor["estado"];
   facturas: Array<FacturaProveedor & { monto_pagado: number; saldo_pendiente: number }>;

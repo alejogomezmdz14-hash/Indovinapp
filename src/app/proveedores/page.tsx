@@ -1,6 +1,7 @@
 import {
   fechaHoyArgentina,
   getFacturasProveedores,
+  getMovimientos,
   getPagosFacturas,
   getPagosProveedores,
 } from "@/lib/data";
@@ -21,14 +22,16 @@ const { buildResumenProveedores } = resumenes as {
     imputaciones: Awaited<ReturnType<typeof getPagosFacturas>>,
     today?: Date,
     proveedoresCanonicos?: readonly string[],
+    movimientos?: Awaited<ReturnType<typeof getMovimientos>>,
   ) => ResumenProveedor[];
 };
 
 export default async function ProveedoresPage() {
-  const [facturas, pagos, imputaciones] = await Promise.all([
+  const [facturas, pagos, imputaciones, movimientos] = await Promise.all([
     getFacturasProveedores(),
     getPagosProveedores(),
     getPagosFacturas(),
+    getMovimientos(),
   ]);
   const proveedores = buildResumenProveedores(
     facturas,
@@ -36,6 +39,7 @@ export default async function ProveedoresPage() {
     imputaciones,
     new Date(),
     PROVEEDORES_ORDEN,
+    movimientos,
   );
 
   const vencidas = proveedores.filter((p) => p.estado === "vencida");

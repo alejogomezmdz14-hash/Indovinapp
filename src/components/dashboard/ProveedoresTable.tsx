@@ -32,9 +32,10 @@ export default function ProveedoresTable({ proveedores }: ProveedoresTableProps)
             <tr className="border-b border-brand-cream-dark text-xs font-semibold uppercase tracking-wider text-gray-400">
               <th className="pb-3 pr-4">Proveedor</th>
               <th className="pb-3 pr-4 text-right">Facturado</th>
-              <th className="pb-3 pr-4 text-right">Pagado</th>
-              <th className="pb-3 pr-4 text-right">Saldo</th>
-              <th className="pb-3 pr-4 text-center">Facturas</th>
+              <th className="pb-3 pr-4 text-right">Pagado factura</th>
+              <th className="pb-3 pr-4 text-right" title="Gastos directos cargados al proveedor desde el bot (sin factura)">Gasto directo</th>
+              <th className="pb-3 pr-4 text-right" title="Total de plata enviada al proveedor: pagos imputados + gastos directos">Total movido</th>
+              <th className="pb-3 pr-4 text-right">Saldo pendiente</th>
               <th className="pb-3">Estado</th>
             </tr>
           </thead>
@@ -55,11 +56,14 @@ export default function ProveedoresTable({ proveedores }: ProveedoresTableProps)
                 <td className="py-3.5 pr-4 text-right font-medium text-emerald-700">
                   {formatCurrency(p.total_pagado)}
                 </td>
+                <td className="py-3.5 pr-4 text-right font-medium text-gray-600">
+                  {p.gastos_directos > 0 ? formatCurrency(p.gastos_directos) : "-"}
+                </td>
+                <td className="py-3.5 pr-4 text-right font-bold text-brand-black">
+                  {formatCurrency(p.total_movido)}
+                </td>
                 <td className="py-3.5 pr-4 text-right font-bold text-brand-wine">
                   {formatCurrency(p.saldo_pendiente)}
-                </td>
-                <td className="py-3.5 pr-4 text-center text-gray-500">
-                  {p.facturas.length}
                 </td>
                 <td className="py-3.5">
                   <StatusBadge variant={p.estado} />
@@ -68,7 +72,7 @@ export default function ProveedoresTable({ proveedores }: ProveedoresTableProps)
             ))}
             {proveedores.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-gray-400">
+                <td colSpan={7} className="py-8 text-center text-gray-400">
                   No hay proveedores registrados
                 </td>
               </tr>

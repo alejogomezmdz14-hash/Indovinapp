@@ -42,6 +42,7 @@ function buildResumenProveedores(
   imputaciones = [],
   today = new Date(),
   proveedoresCanonicos = [],
+  movimientos = [],
 ) {
   const canonicosPorKey = new Map(
     proveedoresCanonicos.map((proveedor) => [proveedorKey(proveedor), proveedor]),
@@ -61,6 +62,19 @@ function buildResumenProveedores(
     pagosPorProveedor.set(
       proveedor,
       (pagosPorProveedor.get(proveedor) ?? 0) + Number(pago.monto || 0),
+    );
+  }
+
+  // Suma gastos directos por proveedor canónico (movimientos con monto negativo).
+  const gastosPorProveedor = new Map();
+  for (const mov of movimientos) {
+    const monto = Number(mov.monto || 0);
+    if (monto >= 0) continue;
+    const proveedor = proveedorCanonico(mov.proveedor, canonicosPorKey);
+    if (!proveedor) continue;
+    gastosPorProveedor.set(
+      proveedor,
+      (gastosPorProveedor.get(proveedor) ?? 0) + Math.abs(monto),
     );
   }
 
@@ -87,11 +101,14 @@ function buildResumenProveedores(
       const totalFacturado = facturasProveedor.reduce((sum, f) => sum + f.monto, 0);
       const totalPagado = facturasProveedor.reduce((sum, f) => sum + f.monto_pagado, 0);
       const saldoPendiente = facturasProveedor.reduce((sum, f) => sum + f.saldo_pendiente, 0);
+      const gastosDirectos = gastosPorProveedor.get(proveedor) ?? 0;
       return {
         proveedor,
         total_facturado: totalFacturado,
         total_pagado: totalPagado,
         pagos_registrados: pagosPorProveedor.get(proveedor) ?? 0,
+        gastos_directos: gastosDirectos,
+        total_movido: totalPagado + gastosDirectos,
         saldo_pendiente: saldoPendiente,
         estado: estadoDesdeFacturas(facturasProveedor, today),
         facturas: facturasProveedor.sort((a, b) => {
