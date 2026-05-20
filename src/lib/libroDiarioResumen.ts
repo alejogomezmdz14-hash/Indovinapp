@@ -13,33 +13,62 @@ export type TotalesPeriodo = {
   resultado: number;
 };
 
-/** Normaliza fecha DD/MM/YYYY o YYYY-MM-DD a clave ordenable YYYY-MM-DD */
-export function parseDateKey(raw: string): string {
-  if (!raw) return "";
-  if (raw.includes("/")) {
-    const [d, m, y] = raw.split("/");
-    return `${y || "?"}-${(m || "?").padStart(2, "0")}-${(d || "?").padStart(2, "0")}`;
+/**
+ * Normaliza DD/MM/YYYY o DD/MM/YY (año 2 dígitos → 20xx) a YYYY-MM-DD.
+ * Devuelve null si la fecha no se puede interpretar (no inventar claves).
+ */
+export function parseDateKey(raw: string): string | null {
+  if (!raw?.trim()) return null;
+  const s = raw.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const key = s.slice(0, 10);
+    return isValidYmd(key) ? key : null;
   }
-  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
-  return raw;
+
+  if (!s.includes("/")) return null;
+
+  const parts = s.split("/").map((p) => p.trim());
+  if (parts.length !== 3) return null;
+
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  let year = parseInt(parts[2], 10);
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) return null;
+
+  if (parts[2].length <= 2) {
+    year = year >= 50 ? 1900 + year : 2000 + year;
+  }
+
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  const key = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return isValidYmd(key) ? key : null;
+}
+
+function isValidYmd(key: string): boolean {
+  const [y, m, d] = key.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 function parseDateObj(dateKey: string): Date | null {
-  if (!dateKey || dateKey.includes("?")) return null;
+  if (!isValidYmd(dateKey)) return null;
   const [y, m, d] = dateKey.split("-").map(Number);
-  if (!y || !m || !d) return null;
   return new Date(y, m - 1, d, 12, 0, 0);
 }
 
-const MONTH_SHORT = [
-  "ene", "feb", "mar", "abr", "may", "jun",
-  "jul", "ago", "sep", "oct", "nov", "dic",
-];
+/** Clave de agrupación: fecha normalizada o texto original si no parsea */
+export function claveDia(fecha: string): string {
+  return parseDateKey(fecha) ?? fecha.trim();
+}
 
-/** Lunes de la semana que contiene la fecha (calendario local) */
-function weekStartMonday(dateKey: string): string {
+/** Lunes de la semana (solo si la fecha parsea bien) */
+function weekStartMonday(dateKey: string): string | null {
   const d = parseDateObj(dateKey);
-  if (!d) return dateKey;
+  if (!d) return null;
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   const monday = new Date(d);
@@ -50,20 +79,14 @@ function weekStartMonday(dateKey: string): string {
   return `${y}-${m}-${dd}`;
 }
 
-function formatDayLabel(dateKey: string, fallbackFecha: string): string {
-  const d = parseDateObj(dateKey);
-  if (!d) return fallbackFecha || dateKey;
-  return `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
-}
-
 function formatWeekLabel(weekStartKey: string): string {
   const start = parseDateObj(weekStartKey);
   if (!start) return weekStartKey;
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
   const fmt = (dt: Date) =>
-    `${dt.getDate()} ${MONTH_SHORT[dt.getMonth()]}${dt.getFullYear() !== start.getFullYear() ? ` ${dt.getFullYear()}` : ""}`;
-  return `Semana ${fmt(start)} – ${fmt(end)} ${end.getFullYear()}`;
+    `${dt.getDate()}/${String(dt.getMonth() + 1).padStart(2, "0")}/${dt.getFullYear()}`;
+  return `${fmt(start)} – ${fmt(end)}`;
 }
 
 function formatMonthLabel(monthKey: string): string {
@@ -96,11 +119,15 @@ function acumular(
   map.set(key, prev);
 }
 
-/** Totales finales por día (clave YYYY-MM-DD) */
+/**
+ * Suma de TODOS los ingresos y egresos del día (todos los movimientos, todos los proveedores).
+ * Clave = claveDia(fecha).
+ */
 export function totalesPorDia(filas: FilaMonto[]) {
   const totales = new Map<string, { totalIngreso: number; totalEgreso: number }>();
   for (const f of filas) {
-    const key = parseDateKey(f.fecha);
+    const key = claveDia(f.fecha);
+    if (!key) continue;
     const prev = totales.get(key) ?? { totalIngreso: 0, totalEgreso: 0 };
     prev.totalIngreso += f.ingreso;
     prev.totalEgreso += f.egreso;
@@ -109,32 +136,17 @@ export function totalesPorDia(filas: FilaMonto[]) {
   return totales;
 }
 
-/** Acumulado del día fila a fila (ingresos y egresos que van sumando en el día) */
-export function acumuladosPorFila(filas: FilaMonto[]) {
-  const out: { totalDiaIngreso: number; totalDiaEgreso: number }[] = [];
-  let dateKey = "";
-  let runIng = 0;
-  let runEgr = 0;
-
-  for (const f of filas) {
-    const k = parseDateKey(f.fecha);
-    if (k !== dateKey) {
-      dateKey = k;
-      runIng = 0;
-      runEgr = 0;
-    }
-    runIng += f.ingreso;
-    runEgr += f.egreso;
-    out.push({ totalDiaIngreso: runIng, totalDiaEgreso: runEgr });
-  }
-  return out;
+/** Etiqueta de día: la fecha tal como está en el movimiento (como el Sheet) */
+function labelDia(fecha: string): string {
+  return fecha.trim();
 }
 
 export function resumenPorDia(filas: FilaMonto[]): TotalesPeriodo[] {
   const map = new Map<string, TotalesPeriodo>();
   for (const f of filas) {
-    const key = parseDateKey(f.fecha);
-    acumular(map, key, formatDayLabel(key, f.fecha), f.ingreso, f.egreso);
+    const key = claveDia(f.fecha);
+    if (!key) continue;
+    acumular(map, key, labelDia(f.fecha), f.ingreso, f.egreso);
   }
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -143,8 +155,10 @@ export function resumenPorSemana(filas: FilaMonto[]): TotalesPeriodo[] {
   const map = new Map<string, TotalesPeriodo>();
   for (const f of filas) {
     const dayKey = parseDateKey(f.fecha);
-    const key = weekStartMonday(dayKey);
-    acumular(map, key, formatWeekLabel(key), f.ingreso, f.egreso);
+    if (!dayKey) continue;
+    const weekKey = weekStartMonday(dayKey);
+    if (!weekKey) continue;
+    acumular(map, weekKey, formatWeekLabel(weekKey), f.ingreso, f.egreso);
   }
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -153,8 +167,9 @@ export function resumenPorMes(filas: FilaMonto[]): TotalesPeriodo[] {
   const map = new Map<string, TotalesPeriodo>();
   for (const f of filas) {
     const dayKey = parseDateKey(f.fecha);
-    const key = dayKey.slice(0, 7);
-    acumular(map, key, formatMonthLabel(key), f.ingreso, f.egreso);
+    if (!dayKey) continue;
+    const monthKey = dayKey.slice(0, 7);
+    acumular(map, monthKey, formatMonthLabel(monthKey), f.ingreso, f.egreso);
   }
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
