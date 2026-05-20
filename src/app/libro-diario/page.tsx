@@ -1,5 +1,13 @@
 import { getIngresosDesglose, getMovimientos } from "@/lib/data";
 import { formatCurrency } from "@/lib/format";
+import {
+  acumuladosPorFila,
+  parseDateKey,
+  resumenPorDia,
+  resumenPorMes,
+  resumenPorSemana,
+  type TotalesPeriodo,
+} from "@/lib/libroDiarioResumen";
 import type { IngresoDesglose, Movimiento } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -9,26 +17,12 @@ type FilaLibroDiario = {
   fecha: string;
   categoria: string;
   detalle: string;
-  ingreso: number; // 0 si es egreso
-  egreso: number;  // 0 si es ingreso
+  ingreso: number;
+  egreso: number;
   medioIngreso: string;
   medioEgreso: string;
 };
 
-function parseDateKey(raw: string): string {
-  if (!raw) return "";
-  if (raw.includes("/")) {
-    const [d, m, y] = raw.split("/");
-    return `${y || "?"}-${(m || "?").padStart(2, "0")}-${(d || "?").padStart(2, "0")}`;
-  }
-  return raw;
-}
-
-/**
- * Convierte los movimientos de Supabase a las 7 columnas con valores +
- * 2 columnas de totales del día (ingresos / egresos).
- * El layout coincide exactamente con la pestaña "Libro diario" del Sheet.
- */
 function armarFilas(
   movimientos: Movimiento[],
   desgloses: IngresoDesglose[],
@@ -43,12 +37,8 @@ function armarFilas(
   return movimientos.map((m) => {
     const esIngreso = m.monto >= 0;
     const desg = desglosePorMov.get(m.id) ?? [];
-    const formaIngreso = esIngreso
-      ? (desg[0]?.forma ?? m.forma ?? "")
-      : "";
-    const formaEgreso = !esIngreso
-      ? (m.forma ?? "")
-      : "";
+    const formaIngreso = esIngreso ? (desg[0]?.forma ?? m.forma ?? "") : "";
+    const formaEgreso = !esIngreso ? (m.forma ?? "") : "";
     const detalle = m.proveedor
       ? (m.comentario ? `${m.proveedor} - ${m.comentario}` : m.proveedor)
       : m.comentario;
@@ -66,16 +56,75 @@ function armarFilas(
   });
 }
 
-function totalesPorDia(filas: FilaLibroDiario[]) {
-  const totales = new Map<string, { totalIngreso: number; totalEgreso: number }>();
-  for (const f of filas) {
-    const key = parseDateKey(f.fecha);
-    const prev = totales.get(key) ?? { totalIngreso: 0, totalEgreso: 0 };
-    prev.totalIngreso += f.ingreso;
-    prev.totalEgreso += f.egreso;
-    totales.set(key, prev);
-  }
-  return totales;
+function TablaResumen({
+  titulo,
+  filas,
+}: {
+  titulo: string;
+  filas: TotalesPeriodo[];
+}) {
+  if (filas.length === 0) return null;
+
+  const totIng = filas.reduce((s, r) => s + r.totalIngreso, 0);
+  const totEgr = filas.reduce((s, r) => s + r.totalEgreso, 0);
+
+  return (
+    <div className="rounded-2xl bg-white shadow-card overflow-hidden">
+      <div className="border-b border-gray-100 px-5 py-3">
+        <h2 className="text-base font-bold text-brand-black">{titulo}</h2>
+      </div>
+      <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th className="px-4 py-2">Período</th>
+                <th className="px-4 py-2 text-right">Ingresos</th>
+                <th className="px-4 py-2 text-right">Egresos</th>
+                <th className="px-4 py-2 text-right">Resultado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((r) => (
+                <tr key={r.key} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-medium text-brand-black">{r.label}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-emerald-700">
+                    {formatCurrency(r.totalIngreso)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-brand-wine">
+                    {formatCurrency(r.totalEgreso)}
+                  </td>
+                  <td
+                    className={`px-4 py-2.5 text-right font-semibold ${
+                      r.resultado >= 0 ? "text-emerald-700" : "text-brand-wine"
+                    }`}
+                  >
+                    {formatCurrency(r.resultado)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-brand-cream/60 font-bold">
+                <td className="px-4 py-2.5 text-brand-black">Total</td>
+                <td className="px-4 py-2.5 text-right text-emerald-700">
+                  {formatCurrency(totIng)}
+                </td>
+                <td className="px-4 py-2.5 text-right text-brand-wine">
+                  {formatCurrency(totEgr)}
+                </td>
+                <td
+                  className={`px-4 py-2.5 text-right ${
+                    totIng - totEgr >= 0 ? "text-emerald-700" : "text-brand-wine"
+                  }`}
+                >
+                  {formatCurrency(totIng - totEgr)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+      </div>
+    </div>
+  );
 }
 
 export default async function LibroDiarioPage() {
@@ -85,19 +134,16 @@ export default async function LibroDiarioPage() {
   ]);
 
   const filas = armarFilas(movimientos, desgloses);
-  // Orden cronológico ascendente (igual que el Sheet): primero la fecha más vieja arriba.
-  filas.sort((a, b) => {
-    const ka = parseDateKey(a.fecha);
-    const kb = parseDateKey(b.fecha);
-    return ka.localeCompare(kb);
-  });
+  filas.sort((a, b) => parseDateKey(a.fecha).localeCompare(parseDateKey(b.fecha)));
 
-  const totales = totalesPorDia(filas);
-  // Marcamos la última fila de cada día para mostrar el total ahí.
+  const acumulados = acumuladosPorFila(filas);
   const ultimaPorDia = new Map<string, string>();
   for (const f of filas) {
     ultimaPorDia.set(parseDateKey(f.fecha), f.id);
   }
+  const porDia = resumenPorDia(filas);
+  const porSemana = resumenPorSemana(filas);
+  const porMes = resumenPorMes(filas);
 
   const totalIngresosGlobal = filas.reduce((s, f) => s + f.ingreso, 0);
   const totalEgresosGlobal = filas.reduce((s, f) => s + f.egreso, 0);
@@ -113,7 +159,6 @@ export default async function LibroDiarioPage() {
         </p>
       </div>
 
-      {/* Métricas globales */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl bg-white p-5 shadow-card">
           <p className="text-sm font-medium text-gray-500">Total ingresos</p>
@@ -129,13 +174,18 @@ export default async function LibroDiarioPage() {
         </div>
         <div className="rounded-2xl bg-white p-5 shadow-card">
           <p className="text-sm font-medium text-gray-500">Resultado</p>
-          <p className={`mt-1 text-2xl font-bold ${totalIngresosGlobal - totalEgresosGlobal >= 0 ? "text-emerald-700" : "text-brand-wine"}`}>
+          <p
+            className={`mt-1 text-2xl font-bold ${
+              totalIngresosGlobal - totalEgresosGlobal >= 0
+                ? "text-emerald-700"
+                : "text-brand-wine"
+            }`}
+          >
             {formatCurrency(totalIngresosGlobal - totalEgresosGlobal)}
           </p>
         </div>
       </div>
 
-      {/* Tabla idéntica al Sheet — 9 columnas */}
       <div className="rounded-2xl bg-white shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -154,17 +204,26 @@ export default async function LibroDiarioPage() {
             </thead>
             <tbody>
               {filas.map((f, i) => {
-                const dateKey = parseDateKey(f.fecha);
-                const esUltimaDelDia = ultimaPorDia.get(dateKey) === f.id;
-                const tot = totales.get(dateKey);
+                const ac = acumulados[i];
+                const esUltimaDelDia =
+                  ultimaPorDia.get(parseDateKey(f.fecha)) === f.id;
                 return (
                   <tr
                     key={f.id}
-                    className={`transition-colors hover:bg-brand-cream ${i !== filas.length - 1 ? "border-b border-gray-50" : ""}`}
+                    className={`transition-colors hover:bg-brand-cream ${
+                      i !== filas.length - 1 ? "border-b border-gray-50" : ""
+                    }`}
                   >
-                    <td className="px-4 py-3 font-medium text-brand-black whitespace-nowrap">{f.fecha}</td>
+                    <td className="px-4 py-3 font-medium text-brand-black whitespace-nowrap">
+                      {f.fecha}
+                    </td>
                     <td className="px-4 py-3 text-gray-600">{f.categoria}</td>
-                    <td className="px-4 py-3 text-gray-700 max-w-[280px] truncate" title={f.detalle}>{f.detalle}</td>
+                    <td
+                      className="px-4 py-3 text-gray-700 max-w-[280px] truncate"
+                      title={f.detalle}
+                    >
+                      {f.detalle}
+                    </td>
                     <td className="px-4 py-3 text-right font-semibold text-emerald-700 whitespace-nowrap">
                       {f.ingreso > 0 ? formatCurrency(f.ingreso) : ""}
                     </td>
@@ -173,11 +232,23 @@ export default async function LibroDiarioPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{f.medioIngreso || ""}</td>
                     <td className="px-4 py-3 text-gray-600">{f.medioEgreso || ""}</td>
-                    <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">
-                      {esUltimaDelDia && tot && tot.totalIngreso > 0 ? formatCurrency(tot.totalIngreso) : ""}
+                    <td
+                      className={`px-4 py-3 text-right whitespace-nowrap ${
+                        esUltimaDelDia ? "font-bold text-emerald-700" : "font-medium text-emerald-600/80"
+                      }`}
+                    >
+                      {ac.totalDiaIngreso > 0
+                        ? formatCurrency(ac.totalDiaIngreso)
+                        : ""}
                     </td>
-                    <td className="px-4 py-3 text-right text-brand-wine whitespace-nowrap">
-                      {esUltimaDelDia && tot && tot.totalEgreso > 0 ? formatCurrency(tot.totalEgreso) : ""}
+                    <td
+                      className={`px-4 py-3 text-right whitespace-nowrap ${
+                        esUltimaDelDia ? "font-bold text-brand-wine" : "font-medium text-brand-wine/80"
+                      }`}
+                    >
+                      {ac.totalDiaEgreso > 0
+                        ? formatCurrency(ac.totalDiaEgreso)
+                        : ""}
                     </td>
                   </tr>
                 );
@@ -192,6 +263,16 @@ export default async function LibroDiarioPage() {
             </tbody>
           </table>
         </div>
+        <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-50">
+          Las dos últimas columnas muestran el acumulado del día: van sumando ingresos y egresos de esa fecha fila a fila.
+        </p>
+      </div>
+
+      <div className="space-y-6">
+        <h2 className="text-xl font-bold text-brand-black">Resúmenes</h2>
+        <TablaResumen titulo="Por día" filas={porDia} />
+        <TablaResumen titulo="Por semana" filas={porSemana} />
+        <TablaResumen titulo="Por mes" filas={porMes} />
       </div>
     </div>
   );
