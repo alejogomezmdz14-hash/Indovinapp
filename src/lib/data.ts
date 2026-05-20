@@ -69,7 +69,7 @@ export async function getMovimientos(): Promise<Movimiento[]> {
     "id, fecha, monto, proveedor, categoria, comentario, tipo_comprobante, numero_comprobante, fecha_vencimiento";
 
   // Intento 1: con forma (migration 009 aplicada).
-  let raw = await supabase
+  const raw = await supabase
     .from("movimientos")
     .select(selectConForma)
     .order("created_at", { ascending: false });
